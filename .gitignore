@@ -21,3 +21,7 @@ outputs/*
 # Fichiers système
 .DS_Store
 Thumbs.db
+
+# renv
+renv/library/
+renv/staging/
