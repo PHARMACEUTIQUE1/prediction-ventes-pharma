@@ -1,0 +1,23 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Données
+data/raw/*
+data/interim/*
+data/processed/*
+
+# Modèles entraînés
+models/*
+
+# Résultats temporaires
+outputs/*
+
+# Secrets
+.Renviron
+.env
+
+# Fichiers système
+.DS_Store
+Thumbs.db
