@@ -51,6 +51,23 @@ function(){
 #* @parser json
 #* @serializer json
 function(req,res,body){
+  # Taille maximale autorisée pour le corps de la requête : 100 Ko
+  taille_max <- 100 * 1024
+  
+  if(!is.null(req$HTTP_CONTENT_LENGTH)){
+    taille_requete <- suppressWarnings(as.numeric(req$HTTP_CONTENT_LENGTH))
+    
+    if(!is.na(taille_requete) && taille_requete > taille_max){
+      res$status <- 413
+      
+      return(list(
+        status="error",
+        code=413,
+        message="Requête trop volumineuse."
+      ))
+    }
+  }
+  
   # Heure de début de la requête.
   debut <- Sys.time()
   # ------------------------------------------------------------------------------
@@ -129,7 +146,7 @@ function(req,res,body){
     list(
       status="error",
       code=400,
-      message=conditionMessage(e))
+      message="Données invalides ou erreur de prédiction.")
   })
   return(resultat)
 }
