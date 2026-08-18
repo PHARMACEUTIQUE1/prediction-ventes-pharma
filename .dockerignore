@@ -1,0 +1,12 @@
+.git
+.github
+.Rproj.user
+.Rhistory
+.RData
+.Renviron
+renv/library
+renv/staging
+data
+docs
+tests
+outputs
