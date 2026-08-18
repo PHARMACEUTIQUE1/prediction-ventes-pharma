@@ -11,6 +11,7 @@ data/processed/*
 # Modèles entraînés
 models/*
 !models/modele_ventes_pharma_lm.rds
+!models/monitoring_reference.rds
 
 # Résultats temporaires
 outputs/*

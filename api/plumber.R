@@ -13,6 +13,7 @@ PROJECT_ROOT <- normalizePath("..",winslash="/",mustWork=TRUE)
 setwd(PROJECT_ROOT)
 source("R/11_fonction_prediction.R")
 source("R/12_logs_api.R")
+source("R/13_monitoring_drift.R")
 
 # ------------------------------------------------------------------------------
 # 2. Sécurité : récupération de la clé API
@@ -109,6 +110,11 @@ function(req,res,body){
     }
     # Appel de la fonction métier de prédiction.
     prediction <- predire_ventes(donnees)
+    try(journaliser_prediction(
+        donnees=donnees,
+        prediction=prediction$.pred,
+        modele_version="1.0"
+      ), silent=TRUE)
     
     
     # ------------------------------------------------------------------------------
