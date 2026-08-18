@@ -95,4 +95,4 @@ EXPOSE 8000
 # 10. Lancement de l'API
 # ------------------------------------------------------------------------------
 
-CMD ["R","-e","setwd('/app/api');plumber::plumb('plumber.R')$run(host='0.0.0.0',port=8000)"]
+CMD ["R","-e","setwd('/app/api');port<-as.integer(Sys.getenv('PORT',unset='8000'));plumber::plumb('plumber.R')$run(host='0.0.0.0',port=port)"]
