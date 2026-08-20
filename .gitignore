@@ -5,6 +5,7 @@
 
 # Données
 data/raw/*
+!data/raw/salesdaily.csv
 data/interim/*
 data/processed/*
 
