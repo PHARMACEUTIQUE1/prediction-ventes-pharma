@@ -1,0 +1,2597 @@
+---
+title: "Prédiction des ventes pharmaceutiques"
+subtitle: "De la modélisation statistique au déploiement MLOps en production"
+author: "Isaac Ama"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    number_sections: false
+    code_folding: hide
+    code_download: true
+    theme: flatly
+    highlight: tango
+    df_print: paged
+    fig_width: 11
+    fig_height: 6
+    fig_caption: true
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+
+# ==============================================================================
+# CONFIGURATION DU RAPPORT
+# ==============================================================================
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 11,
+  fig.height = 6,
+  dpi = 150
+)
+
+options(
+  scipen = 999,
+  digits = 4
+)
+
+# ------------------------------------------------------------------------------
+# Racine du projet
+# ------------------------------------------------------------------------------
+
+PROJECT_ROOT <- normalizePath(
+  "..",
+  winslash = "/",
+  mustWork = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = PROJECT_ROOT
+)
+
+setwd(PROJECT_ROOT)
+
+# ------------------------------------------------------------------------------
+# Packages
+# ------------------------------------------------------------------------------
+
+library(tidyverse)
+library(tidymodels)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(glue)
+library(tseries)
+
+# ------------------------------------------------------------------------------
+# Scripts du projet
+# ------------------------------------------------------------------------------
+
+source("R/08_evaluation_finale.R")
+source("R/13_monitoring_drift.R")
+
+# ------------------------------------------------------------------------------
+# Couleurs graphiques
+# ------------------------------------------------------------------------------
+
+COULEUR_PRIMAIRE <- "#1F4E79"
+COULEUR_SECONDAIRE <- "#2E75B6"
+COULEUR_ACCENT <- "#00A6A6"
+
+COULEUR_OK <- "#2E7D32"
+COULEUR_SURVEILLANCE <- "#F9A825"
+COULEUR_DRIFT <- "#C62828"
+
+COULEUR_TEXTE <- "#1F2937"
+COULEUR_GRILLE <- "#E5E7EB"
+
+# ------------------------------------------------------------------------------
+# Thème graphique du rapport
+# ------------------------------------------------------------------------------
+
+theme_pharma <- function(){
+
+  theme_minimal(base_size = 12) +
+
+    theme(
+      plot.title = element_text(
+        size = 17,
+        face = "bold",
+        color = COULEUR_TEXTE
+      ),
+
+      plot.subtitle = element_text(
+        size = 11,
+        color = "#4B5563"
+      ),
+
+      axis.title = element_text(
+        face = "bold",
+        color = COULEUR_TEXTE
+      ),
+
+      panel.grid.minor = element_blank(),
+
+      panel.grid.major = element_line(
+        color = COULEUR_GRILLE,
+        linewidth = 0.3
+      ),
+
+      legend.position = "bottom",
+
+      plot.caption = element_text(
+        size = 9,
+        color = "#6B7280"
+      )
+    )
+}
+
+```
+
+<style>
+
+/* ==============================================================================
+   RAPPORT IA-PHARMA — INTERFACE "UNITE D'ANALYSE" — THEME SOMBRE ANIME
+   Habillage visuel uniquement. Aucune donnee, aucun chiffre, aucun code R
+   n'est modifie par ce theme : seule la couche de presentation change.
+============================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+
+:root{
+  --bg-void:#03050c;
+  --bg-deep:#070b16;
+  --panel:rgba(10,18,32,.72);
+  --panel-border:rgba(56,225,255,.28);
+  --cyan:#22e8ff;
+  --cyan-soft:#8ff6ff;
+  --magenta:#ff3ec8;
+  --violet:#a855f7;
+  --green:#39ffb0;
+  --amber:#ffcf4d;
+  --red:#ff3d5e;
+  --text:#dff7ff;
+  --text-dim:#8298b0;
+  --grid:rgba(34,232,255,.07);
+}
+
+*{ box-sizing:border-box; }
+
+html, body{ background:var(--bg-void) !important; }
+
+body{
+  font-family:'Inter', Arial, sans-serif !important;
+  color:var(--text) !important;
+  font-size:15.5px;
+  line-height:1.75;
+  position:relative;
+  overflow-x:hidden;
+  padding-top:44px;
+}
+
+/* ---------- fond cosmique anime ---------- */
+body::before{
+  content:"";
+  position:fixed; inset:0; z-index:-3;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(34,232,255,.17), transparent 42%),
+    radial-gradient(circle at 85% 10%, rgba(255,62,200,.15), transparent 45%),
+    radial-gradient(circle at 50% 90%, rgba(168,85,247,.16), transparent 45%),
+    var(--bg-void);
+  background-size:200% 200%;
+  animation:driftBg 24s ease-in-out infinite;
+}
+@keyframes driftBg{
+  0%{background-position:0% 0%;}
+  50%{background-position:100% 100%;}
+  100%{background-position:0% 0%;}
+}
+
+/* ---------- grille circuit ---------- */
+body::after{
+  content:"";
+  position:fixed; inset:0; z-index:-2;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:42px 42px;
+  animation:gridShift 16s linear infinite;
+  opacity:.6;
+}
+@keyframes gridShift{ from{background-position:0 0;} to{background-position:42px 42px;} }
+
+canvas#ia-particles{
+  position:fixed; inset:0; z-index:-1; opacity:.55;
+}
+
+#ia-hud{
+  position:fixed; top:0; left:0; right:0; height:34px; z-index:9999;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 18px;
+  background:rgba(4,8,16,.88);
+  border-bottom:1px solid var(--panel-border);
+  backdrop-filter:blur(6px);
+  font-family:'Orbitron',sans-serif;
+  font-size:11px; letter-spacing:1.6px;
+  color:var(--cyan-soft);
+}
+#ia-hud .dot{
+  width:8px; height:8px; border-radius:50%;
+  background:var(--green); display:inline-block; margin-right:8px;
+  box-shadow:0 0 6px var(--green);
+  animation:blink 1.6s ease-in-out infinite;
+}
+@keyframes blink{ 50%{ opacity:.25; } }
+
+/* ---------- titres ---------- */
+h1,h2,h3,h4{
+  font-family:'Manrope', Arial, sans-serif !important;
+}
+
+h1{
+  color:var(--cyan-soft) !important;
+  font-weight:800 !important;
+  text-shadow:0 0 10px rgba(34,232,255,.65), 0 0 26px rgba(34,232,255,.22);
+  border-bottom:2px solid transparent !important;
+  border-image:linear-gradient(90deg,var(--cyan),var(--magenta),transparent) 1;
+  padding-bottom:10px !important;
+  margin-top:58px !important;
+  letter-spacing:.4px;
+}
+h1::before{ content:"◤ "; color:var(--magenta); }
+
+h2{
+  color:var(--cyan) !important;
+  font-weight:700 !important;
+  text-shadow:0 0 8px rgba(34,232,255,.35);
+  margin-top:38px !important;
+}
+h2::before{ content:"▹ "; color:var(--magenta); }
+
+h3{ color:#bdf5ff !important; font-weight:600 !important; }
+h3::before{ content:"· "; color:var(--violet); }
+
+.title{
+  font-family:'Manrope', Arial, sans-serif !important;
+  color:#ffffff !important;
+  font-weight:900 !important;
+  font-size:2.5rem !important;
+  text-shadow:0 0 18px var(--cyan), 0 0 42px rgba(255,62,200,.4);
+  animation:flicker 5s infinite;
+}
+h3.subtitle, .subtitle{
+  color:var(--cyan-soft) !important;
+  font-family:'Inter', Arial, sans-serif !important;
+  opacity:.9;
+}
+h4.author, .author, h4.date, .date{
+  color:var(--text-dim) !important;
+  font-family:'Share Tech Mono',monospace !important;
+}
+@keyframes flicker{
+  0%,19%,21%,23%,80%,100%{ opacity:1; }
+  20%,22%{ opacity:.7; }
+}
+
+a{ color:var(--cyan-soft); }
+a:hover{ color:var(--magenta); }
+
+hr{ border:none; border-top:1px solid var(--panel-border); }
+
+strong{ color:#fff; }
+
+/* ---------- blocs de code / terminal ---------- */
+pre, pre[class]{
+  background:rgba(4,10,20,.88) !important;
+  border:1px solid var(--panel-border) !important;
+  border-radius:8px !important;
+  box-shadow:0 0 18px rgba(34,232,255,.08) inset;
+}
+code{
+  font-family:'Share Tech Mono',monospace !important;
+  color:var(--green) !important;
+  background:rgba(57,255,176,.08) !important;
+  border-radius:3px;
+}
+pre code{ color:var(--cyan-soft) !important; background:transparent !important; }
+
+/* ---------- panneaux de dialogue de l'IA ---------- */
+blockquote, .insight, .business, .warning, .technical{
+  position:relative;
+  background:var(--panel) !important;
+  backdrop-filter:blur(8px);
+  border-radius:10px !important;
+  color:var(--text) !important;
+  border-left-width:4px !important;
+  padding:26px 22px 18px 22px !important;
+  margin:32px 0 !important;
+  box-shadow:0 0 0 1px var(--panel-border), 0 8px 26px rgba(0,0,0,.4);
+}
+blockquote::before, .insight::before, .business::before, .warning::before, .technical::before{
+  position:absolute;
+  top:-12px; left:18px;
+  padding:2px 12px;
+  background:var(--bg-deep);
+  border-radius:6px;
+  font-family:'Orbitron',sans-serif;
+  font-size:10px;
+  letter-spacing:2px;
+  white-space:nowrap;
+}
+blockquote::before{ content:"ISAAC· TRANSMISSION"; color:var(--cyan-soft); border:1px solid var(--cyan-soft); box-shadow:0 0 8px rgba(143,246,255,.4); }
+.insight{ border-left-color:var(--cyan) !important; }
+.insight::before{ content:"ISAAC· ANALYSE"; color:var(--cyan); border:1px solid var(--cyan); box-shadow:0 0 8px rgba(34,232,255,.4); }
+.business{ border-left-color:var(--green) !important; }
+.business::before{ content:"ISAAC· IMPACT METIER"; color:var(--green); border:1px solid var(--green); box-shadow:0 0 8px rgba(57,255,176,.4); }
+.warning{ border-left-color:var(--amber) !important; }
+.warning::before{ content:"ISAAC· ALERTE"; color:var(--amber); border:1px solid var(--amber); box-shadow:0 0 8px rgba(255,207,77,.4); }
+.technical{ border-left-color:var(--violet) !important; }
+.technical::before{ content:"ISAAC· NOTE TECHNIQUE"; color:var(--violet); border:1px solid var(--violet); box-shadow:0 0 8px rgba(168,85,247,.4); }
+
+/* ---------- indicateurs de statut ---------- */
+.status-ok{ color:var(--green) !important; text-shadow:0 0 8px var(--green); animation:pulseS 2s infinite; }
+.status-watch{ color:var(--amber) !important; text-shadow:0 0 8px var(--amber); animation:pulseS 2s infinite; }
+.status-drift{ color:var(--red) !important; text-shadow:0 0 8px var(--red); animation:pulseS 1.1s infinite; }
+@keyframes pulseS{ 50%{ opacity:.55; } }
+
+/* ---------- cartes KPI holographiques ---------- */
+.kpi-container{ gap:16px !important; }
+.kpi{
+  background:linear-gradient(145deg, rgba(10,20,36,.92), rgba(6,12,24,.92)) !important;
+  border:1px solid var(--panel-border) !important;
+  border-radius:12px !important;
+  position:relative;
+  overflow:hidden;
+  box-shadow:0 0 0 1px rgba(34,232,255,.08), 0 10px 30px rgba(0,0,0,.45);
+  animation:kpiGlow 3.6s ease-in-out infinite;
+}
+.kpi::before{
+  content:"";
+  position:absolute; inset:0;
+  background:linear-gradient(120deg, transparent, rgba(34,232,255,.14), transparent);
+  transform:translateX(-120%);
+  animation:kpiSheen 4.8s ease-in-out infinite;
+}
+@keyframes kpiSheen{
+  0%{ transform:translateX(-120%); }
+  60%{ transform:translateX(120%); }
+  100%{ transform:translateX(120%); }
+}
+@keyframes kpiGlow{
+  0%,100%{ box-shadow:0 0 0 1px rgba(34,232,255,.08), 0 10px 30px rgba(0,0,0,.4); }
+  50%{ box-shadow:0 0 0 1px rgba(34,232,255,.35), 0 10px 34px rgba(34,232,255,.16); }
+}
+.kpi-title{
+  color:var(--text-dim) !important;
+  font-family:'Manrope', Arial, sans-serif !important;
+  letter-spacing:1.5px;
+  font-size:11px !important;
+  position:relative; z-index:1;
+}
+.kpi-value{
+  color:var(--cyan-soft) !important;
+  text-shadow:0 0 14px rgba(34,232,255,.5);
+  font-family:'Orbitron',sans-serif !important;
+  position:relative; z-index:1;
+}
+
+/* ---------- tableaux ---------- */
+table{ background:rgba(8,14,26,.72) !important; color:var(--text) !important; }
+thead, thead th{
+  background:rgba(34,232,255,.14) !important;
+  color:var(--cyan-soft) !important;
+  font-family:'Orbitron',sans-serif !important;
+  letter-spacing:.5px;
+  border-bottom:1px solid var(--panel-border) !important;
+}
+tbody tr{ border-bottom:1px solid rgba(255,255,255,.05) !important; }
+.table-striped>tbody>tr:nth-of-type(odd){ background:rgba(34,232,255,.045) !important; }
+.table-hover>tbody>tr:hover{
+  background:rgba(34,232,255,.16) !important;
+  box-shadow:inset 0 0 12px rgba(34,232,255,.22);
+}
+td, th{ color:var(--text) !important; border-color:rgba(255,255,255,.07) !important; }
+caption{ color:var(--text-dim) !important; font-family:'Orbitron',sans-serif; font-size:12px; letter-spacing:1px; }
+
+/* ---------- table des matieres flottante ---------- */
+#TOC, .tocify{
+  background:rgba(6,12,22,.9) !important;
+  border:1px solid var(--panel-border) !important;
+  border-radius:10px;
+  box-shadow:0 0 26px rgba(34,232,255,.1);
+}
+.tocify-header, .tocify-item, .list-group-item{
+  background:transparent !important;
+  color:var(--text) !important;
+  border-color:rgba(255,255,255,.06) !important;
+}
+.tocify-item.active > a, .tocify-focus{
+  background:rgba(34,232,255,.18) !important;
+  color:var(--cyan-soft) !important;
+  border-left:3px solid var(--cyan);
+}
+
+/* ---------- scrollbar / selection ---------- */
+::-webkit-scrollbar{ width:10px; }
+::-webkit-scrollbar-track{ background:var(--bg-void); }
+::-webkit-scrollbar-thumb{ background:linear-gradient(var(--cyan),var(--magenta)); border-radius:6px; }
+::selection{ background:rgba(34,232,255,.35); color:#fff; }
+
+/* ---------- panneau d'ouverture "boot sequence" de l'IA ---------- */
+.ia-boot{
+  position:relative;
+  background:var(--panel);
+  border:1px solid var(--panel-border);
+  border-radius:14px;
+  padding:26px 28px;
+  margin:30px 0 44px;
+  box-shadow:0 0 40px rgba(34,232,255,.12), inset 0 0 30px rgba(34,232,255,.04);
+  backdrop-filter:blur(8px);
+}
+.ia-boot .ia-tag{
+  font-family:'Orbitron',sans-serif;
+  font-size:11px;
+  letter-spacing:3px;
+  color:var(--magenta);
+  margin-bottom:14px;
+}
+.ia-avatar-row{ display:flex; align-items:flex-start; gap:16px; }
+.ia-avatar{
+  flex:0 0 auto;
+  width:48px; height:48px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #1c3a52, #04101c);
+  border:1px solid var(--panel-border);
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px;
+  box-shadow:0 0 16px rgba(34,232,255,.35);
+  animation:avatarPulse 2.4s ease-in-out infinite;
+}
+@keyframes avatarPulse{ 50%{ box-shadow:0 0 26px rgba(34,232,255,.6); } }
+.ia-typer{
+  font-family:'Share Tech Mono',monospace;
+  color:var(--green);
+  white-space:nowrap;
+  overflow:hidden;
+  border-right:2px solid var(--green);
+  width:0;
+  max-width:100%;
+  animation:typing 3.6s steps(56,end) forwards, caret .8s step-end infinite;
+}
+@keyframes typing{ from{ width:0; } to{ width:56ch; } }
+@keyframes caret{ 50%{ border-color:transparent; } }
+.ia-note{ color:var(--text-dim); margin-top:14px; font-size:13.5px; }
+
+.ia-outro{
+  position:relative;
+  background:var(--panel);
+  border:1px solid var(--panel-border);
+  border-radius:14px;
+  padding:22px 26px;
+  margin:50px 0 20px;
+  text-align:center;
+  font-family:'Orbitron',sans-serif;
+  letter-spacing:2px;
+  color:var(--cyan-soft);
+  box-shadow:0 0 34px rgba(34,232,255,.1);
+}
+.ia-outro .dot{
+  width:8px; height:8px; border-radius:50%; background:var(--green);
+  display:inline-block; margin-right:8px; box-shadow:0 0 6px var(--green);
+  animation:blink 1.6s ease-in-out infinite;
+}
+
+@media (max-width: 780px){
+  #ia-hud span:last-child{ display:none; }
+  .ia-avatar-row{ flex-direction:column; }
+}
+
+</style>
+
+<div id="ia-hud">
+  <span><span class="dot"></span>SYSTEME_IA_PHARMA // CANAL SECURISE // EN LIGNE</span>
+  <span>MODULE_PREDICTION :: ACTIF</span>
+</div>
+<canvas id="ia-particles"></canvas>
+
+<script>
+window.addEventListener('DOMContentLoaded', function(){
+  var canvas = document.getElementById('ia-particles');
+  if(!canvas || !canvas.getContext) return;
+  var ctx = canvas.getContext('2d');
+  var W, H, particles = [];
+  var N = 70;
+
+  function resize(){
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function rand(a, b){ return a + Math.random() * (b - a); }
+
+  for (var i = 0; i < N; i++){
+    particles.push({
+      x: rand(0, W), y: rand(0, H),
+      vx: rand(-0.25, 0.25), vy: rand(-0.25, 0.25),
+      r: rand(1, 2.2)
+    });
+  }
+
+  function step(){
+    ctx.clearRect(0, 0, W, H);
+
+    for (var i = 0; i < particles.length; i++){
+      var p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0 || p.x > W) p.vx *= -1;
+      if (p.y < 0 || p.y > H) p.vy *= -1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(34,232,255,0.65)';
+      ctx.fill();
+    }
+
+    for (var i = 0; i < particles.length; i++){
+      for (var j = i + 1; j < particles.length; j++){
+        var a = particles[i], b = particles[j];
+        var dx = a.x - b.x, dy = a.y - b.y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 130){
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = 'rgba(34,232,255,' + ((1 - dist / 130) * 0.35) + ')';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+    }
+
+    requestAnimationFrame(step);
+  }
+  step();
+});
+</script>
+
+<div class="ia-boot">
+  <div class="ia-tag">◉ UNITE D'ANALYSE IA-PHARMA — SEQUENCE DE DEMARRAGE TERMINEE</div>
+  <div class="ia-avatar-row">
+    <div class="ia-avatar">🤖</div>
+    <div>
+      <p class="ia-typer">Bonjour. Unite IA-PHARMA en ligne. Rapport de prediction charge, lecture en cours...</p>
+      <p class="ia-note">Tous les resultats, chiffres, tableaux et scripts presentes ci-dessous sont strictement identiques au rapport original. Seule mon interface de presentation a ete reconstruite.</p>
+    </div>
+  </div>
+</div>
+
+  
+# Synthèse exécutive
+
+## Finalité du projet
+
+L'objectif principal de ce projet est de développer une chaîne complète permettant de **prévoir les ventes pharmaceutiques à partir de leur historique**, puis de rendre cette prédiction exploitable dans un environnement de production.
+
+Le projet ne s'arrête donc pas à l'entraînement d'un algorithme. Il couvre l'ensemble du cycle de vie du modèle :
+
+- préparation des données ;
+- analyse temporelle des ventes ;
+- création de variables prédictives ;
+- comparaison et sélection de modèles ;
+- validation sur des observations futures non utilisées pendant l'apprentissage ;
+- création d'une API de prédiction ;
+- conteneurisation Docker ;
+- intégration et déploiement continus ;
+- déploiement cloud ;
+- sécurisation de l'API ;
+- monitoring et détection du drift.
+
+<div class="business">
+
+**Enjeu métier**
+
+Une meilleure anticipation des ventes peut contribuer à améliorer le pilotage de l'activité pharmaceutique, anticiper les variations de demande, faciliter la planification et fournir un outil quantitatif d'aide à la décision.
+
+</div>
+  
+```{r kpi-executifs}
+
+# ==============================================================================
+# KPI EXÉCUTIFS DU PROJET
+# ==============================================================================
+
+metriques_finales <- metriques_test_lm |>
+  select(.metric,.estimate)
+
+rmse_final <- metriques_finales |>
+  filter(.metric == "rmse") |>
+  pull(.estimate)
+
+rsq_final <- metriques_finales |>
+  filter(.metric == "rsq") |>
+  pull(.estimate)
+
+mae_final <- metriques_finales |>
+  filter(.metric == "mae") |>
+  pull(.estimate)
+
+nb_train <- nrow(train_data)
+nb_test <- nrow(test_data)
+
+cat(
+  glue(
+'
+<div class="kpi-container">
+
+<div class="kpi">
+<div class="kpi-title">Observations apprentissage</div>
+<div class="kpi-value">{format(nb_train,big.mark=" ")}</div>
+</div>
+
+<div class="kpi">
+<div class="kpi-title">Observations test</div>
+<div class="kpi-value">{format(nb_test,big.mark=" ")}</div>
+</div>
+
+<div class="kpi">
+<div class="kpi-title">MAE test</div>
+<div class="kpi-value">{round(mae_final,2)}</div>
+</div>
+
+<div class="kpi">
+<div class="kpi-title">RMSE test</div>
+<div class="kpi-value">{round(rmse_final,2)}</div>
+</div>
+
+<div class="kpi">
+<div class="kpi-title">R² test</div>
+<div class="kpi-value">{percent(rsq_final,accuracy=.1)}</div>
+</div>
+
+</div>
+'
+  )
+)
+```
+
+# 1. Contexte et problématique métier
+
+## 1.1 Pourquoi prédire les ventes pharmaceutiques ?
+
+Les ventes de produits pharmaceutiques évoluent dans le temps sous l'effet de nombreux mécanismes : tendances de fond, saisonnalité, comportement récent des ventes, effets calendaires et variations ponctuelles de la demande.
+
+L'exploitation de l'historique permet de transformer ces observations en variables prédictives et d'estimer la quantité susceptible d'être vendue sur une période future.
+
+Les prédictions peuvent notamment contribuer à :
+
+- anticiper les besoins ;
+- détecter suffisamment tôt des évolutions de consommation ;
+- faciliter le pilotage opérationnel ;
+- améliorer la planification ;
+- réduire les décisions uniquement fondées sur l'observation rétrospective.
+
+## 1.2 Question principale
+
+> **Dans quelle mesure l'historique des ventes et les caractéristiques temporelles permettent-ils de prédire les ventes pharmaceutiques futures ?**
+
+## 1.3 Variable cible
+
+La variable que le modèle cherche à prédire est :
+
+**`analgesiques_antipyretiques_anilides`**
+
+Elle représente la quantité de ventes observée pour le périmètre pharmaceutique étudié.
+
+## 1.4 Objectifs analytiques
+
+Le projet poursuit quatre objectifs complémentaires :
+
+**Objectif prédictif** : produire une estimation des ventes futures.
+
+**Objectif statistique** : mesurer précisément la qualité prédictive hors échantillon.
+
+**Objectif opérationnel** : rendre le modèle utilisable via une API.
+
+**Objectif MLOps** : assurer reproductibilité, sécurité, déploiement et surveillance du modèle.
+
+# 2. Données et analyse exploratoire
+
+## 2.1 Structure temporelle
+
+```{r donnees-perimetre}
+
+resume_donnees <- tibble(
+  Indicateur = c(
+    "Nombre total d'observations",
+    "Début de période",
+    "Fin de période",
+    "Observations d'apprentissage",
+    "Observations de test",
+    "Part apprentissage",
+    "Part test"
+  ),
+
+  Valeur = c(
+    nrow(donnees_ml),
+    as.character(min(donnees_ml$date,na.rm=TRUE)),
+    as.character(max(donnees_ml$date,na.rm=TRUE)),
+    nrow(train_data),
+    nrow(test_data),
+    scales::percent(nrow(train_data)/nrow(donnees_ml),accuracy=.1),
+    scales::percent(nrow(test_data)/nrow(donnees_ml),accuracy=.1)
+  )
+)
+
+kable(
+  resume_donnees,
+  align = c("l","r"),
+  caption = "Périmètre des données utilisées pour la modélisation"
+) |>
+  kable_styling(
+    bootstrap_options = c("striped","hover","condensed"),
+    full_width = FALSE
+  )
+```
+
+<div class="technical">
+
+La séparation est réalisée **chronologiquement** et non aléatoirement. Les observations les plus anciennes sont utilisées pour l'apprentissage et les plus récentes sont conservées comme test final.
+
+Cette approche réduit le risque de fuite d'information entre passé et futur.
+
+</div>
+
+## 2.2 Évolution historique des ventes
+```{r serie-temporelle}
+
+ggplot(
+  donnees_ml,
+  aes(
+    x = date,
+    y = analgesiques_antipyretiques_anilides
+  )
+) +
+
+  geom_line(
+    color = COULEUR_PRIMAIRE,
+    linewidth = 0.65,
+    alpha = 0.85
+  ) +
+
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    color = COULEUR_ACCENT,
+    linewidth = 1
+  ) +
+
+  labs(
+    title = "Évolution historique des ventes pharmaceutiques",
+    subtitle = "Observation de la dynamique temporelle de la variable cible",
+    x = NULL,
+    y = "Ventes",
+    caption = "Source : données du projet de prédiction des ventes pharmaceutiques"
+  ) +
+
+  theme_pharma()
+```
+
+<div class="insight">
+
+<strong>Lecture :</strong> la série temporelle permet d'identifier la dynamique générale des ventes et justifie l'utilisation de variables capables de représenter à la fois le passé récent, la tendance et les effets calendaires.
+
+</div>
+
+## 2.3 Analyse de la saisonnalité
+
+L'analyse de la saisonnalité vise à identifier l'existence de comportements récurrents des ventes selon le calendrier. Deux dimensions sont examinées ici : le **jour de la semaine** et le **mois de l'année**.
+
+```{r saisonnalite-jour}
+
+donnees_ml |>
+  mutate(
+    jour_semaine = forcats::fct_reorder(
+      jour_semaine,
+      analgesiques_antipyretiques_anilides,
+      mean,
+      na.rm = TRUE
+    )
+  ) |>
+
+  ggplot(
+    aes(
+      x = jour_semaine,
+      y = analgesiques_antipyretiques_anilides
+    )
+  ) +
+
+  geom_boxplot(
+    fill = "#DCEAF7",
+    color = COULEUR_PRIMAIRE,
+    outlier.alpha = 0.25
+  ) +
+
+  labs(
+    title = "Les ventes diffèrent-elles selon le jour de la semaine ?",
+    subtitle = "Distribution des ventes observées par jour",
+    x = NULL,
+    y = "Ventes"
+  ) +
+
+  theme_pharma()
+```
+
+
+```{r saisonnalite-mois}
+
+ventes_mensuelles <- donnees_ml |>
+  group_by(mois) |>
+  summarise(
+    ventes_moyennes = mean(
+      analgesiques_antipyretiques_anilides,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+ggplot(
+  ventes_mensuelles,
+  aes(
+    x = factor(mois),
+    y = ventes_moyennes,
+    group = 1
+  )
+) +
+
+  geom_line(
+    color = COULEUR_PRIMAIRE,
+    linewidth = 1
+  ) +
+
+  geom_point(
+    color = COULEUR_ACCENT,
+    size = 3
+  ) +
+
+  labs(
+    title = "Profil saisonnier mensuel des ventes",
+    subtitle = "Ventes moyennes observées selon le mois de l'année",
+    x = "Mois",
+    y = "Ventes moyennes"
+  ) +
+
+  theme_pharma()
+```
+
+<div class="insight">
+
+<strong>Lecture :</strong> la comparaison des ventes selon le jour de la semaine et le mois permet d'identifier d'éventuels rythmes calendaires récurrents. Ces structures saisonnières justifient l'intégration de variables temporelles dans le modèle prédictif.
+
+</div>
+
+## 2.4 Analyse de corrélation
+
+L'analyse de corrélation permet d'évaluer l'intensité et le sens de la relation linéaire entre les ventes à prédire et les principales variables historiques construites à partir de la série temporelle.
+
+Une corrélation positive indique que les deux variables tendent à évoluer dans le même sens, tandis qu'une corrélation négative traduit une évolution opposée.
+
+
+```{r correlations-features}
+
+variables_correlation <- donnees_ml |>
+  select(
+    analgesiques_antipyretiques_anilides,
+    ventes_lag_1,
+    ventes_lag_7,
+    ventes_lag_14,
+    ventes_lag_30,
+    moyenne_mobile_7j,
+    moyenne_mobile_30j,
+    variation_7j,
+    ecart_moyennes_mobiles,
+    volatilite_7j
+  )
+
+matrice_cor <- cor(
+  variables_correlation,
+  use = "pairwise.complete.obs"
+)
+
+cor_cible <- tibble(
+  variable = rownames(matrice_cor),
+  correlation = matrice_cor[
+    ,
+    "analgesiques_antipyretiques_anilides"
+  ]
+) |>
+  filter(
+    variable != "analgesiques_antipyretiques_anilides"
+  ) |>
+  arrange(
+    abs(correlation)
+  )
+
+ggplot(
+  cor_cible,
+  aes(
+    x = reorder(variable, abs(correlation)),
+    y = correlation
+  )
+) +
+
+  geom_col(
+    fill = COULEUR_SECONDAIRE,
+    width = 0.7
+  ) +
+
+  coord_flip() +
+
+  geom_hline(
+    yintercept = 0,
+    linewidth = 0.4,
+    linetype = "dashed"
+  ) +
+
+  labs(
+    title = "Corrélation des variables historiques avec les ventes",
+    subtitle = "Coefficient de corrélation linéaire avec la variable cible",
+    x = NULL,
+    y = "Coefficient de corrélation"
+  ) +
+
+  theme_pharma()
+```
+
+<div class="insight">
+
+<strong>Lecture :</strong> les variables présentant les corrélations absolues les plus élevées sont celles dont l'évolution est la plus directement associée aux ventes observées. Cette analyse constitue un premier diagnostic des relations entre la cible et les informations historiques, mais elle ne suffit pas à elle seule pour déterminer l'importance prédictive d'une variable.
+
+</div>
+
+## 2.5 Analyse de stationnarité
+
+L'analyse de stationnarité vise à déterminer si les propriétés statistiques de la série de ventes restent suffisamment stables dans le temps.
+
+Le test **Augmented Dickey-Fuller (ADF)** est utilisé avec les hypothèses suivantes :
+
+- **H0** : la série présente une racine unitaire et est considérée comme non stationnaire ;
+- **H1** : la série est stationnaire.
+
+Un seuil de significativité de **5 %** est utilisé.
+
+
+```{r stationnarite-adf}
+
+serie_ventes <- donnees_ml |>
+  arrange(date) |>
+  pull(
+    analgesiques_antipyretiques_anilides
+  )
+
+test_adf <- tseries::adf.test(
+  serie_ventes,
+  alternative = "stationary"
+)
+
+resultat_adf <- tibble(
+  Indicateur = c(
+    "Statistique ADF",
+    "p-value",
+    "Seuil de décision",
+    "Conclusion"
+  ),
+
+  Valeur = c(
+    round(
+      unname(test_adf$statistic),
+      4
+    ),
+
+    round(
+      test_adf$p.value,
+      4
+    ),
+
+    "5 %",
+
+    ifelse(
+      test_adf$p.value < 0.05,
+      "Rejet de H0 : la série est considérée comme stationnaire",
+      "H0 non rejetée : la stationnarité n'est pas démontrée"
+    )
+  )
+)
+
+kable(
+  resultat_adf,
+  caption = "Résultats du test Augmented Dickey-Fuller"
+) |>
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover",
+      "condensed"
+    ),
+    full_width = FALSE
+  )
+```
+
+```{r interpretation-adf, results='asis'}
+
+if(test_adf$p.value < 0.05){
+
+  cat(
+'
+<div class="business">
+
+<strong>Conclusion du test ADF :</strong> la p-value est inférieure à 5 %. L’hypothèse nulle de présence d’une racine unitaire est rejetée. La série présente donc des caractéristiques compatibles avec une stationnarité au sens du test ADF.
+
+</div>
+'
+  )
+
+}else{
+
+  cat(
+'
+<div class="warning">
+
+<strong>Conclusion du test ADF :</strong> la p-value est supérieure ou égale à 5 %. L’hypothèse nulle ne peut pas être rejetée. La stationnarité de la série n’est donc pas démontrée par le test ADF.
+
+</div>
+'
+  )
+}
+```
+
+
+# 3. Construction des variables prédictives
+
+La prédiction ne repose pas uniquement sur la date. Le modèle reçoit également des informations décrivant la dynamique passée de la série.
+
+## 3.1 Variables calendaires
+
+Les caractéristiques calendaires comprennent notamment :
+
+- année ;
+- mois ;
+- jour du mois ;
+- semaine de l'année ;
+- trimestre ;
+- jour de la semaine ;
+- indicateur week-end ;
+- début et fin de mois.
+
+## 3.2 Retards temporels
+
+Les variables de type *lag* représentent les ventes observées avant la date à prédire :
+
+| Variable | Interprétation |
+|---|---|
+| `ventes_lag_1` | ventes de la veille |
+| `ventes_lag_7` | ventes une semaine auparavant |
+| `ventes_lag_14` | ventes deux semaines auparavant |
+| `ventes_lag_30` | ventes environ un mois auparavant |
+
+## 3.3 Tendances et moyennes mobiles
+
+Le modèle exploite également :
+
+- `tendance` ;
+- `moyenne_mobile_7j` ;
+- `moyenne_mobile_30j` ;
+- `variation_7j` ;
+- `ecart_moyennes_mobiles` ;
+- `volatilite_7j`.
+
+<div class="business">
+
+Ces variables traduisent des informations directement liées au comportement récent de la demande. Elles permettent au modèle de distinguer une situation stable d'une phase d'accélération, de ralentissement ou de forte volatilité.
+
+</div>
+
+# 4. Stratégie d'apprentissage et de validation
+
+Une série temporelle ne doit pas être traitée comme un jeu de données classique dans lequel les observations peuvent être mélangées aléatoirement.
+
+Le protocole retenu respecte donc l'ordre chronologique.
+
+```text
+Données complètes
+       │
+       ├──────────── 80 % ─────────────┐
+       │                               │
+       ▼                               │
+Apprentissage                          │
+       │                               │
+       ├─ Fenêtre 1 → validation future
+       ├─ Fenêtre 2 → validation future
+       ├─ ...
+       └─ Fenêtres temporelles
+                                       │
+                           20 % les plus récents
+                                       │
+                                       ▼
+                               TEST FINAL
+```
+
+Le test final est volontairement isolé pendant la phase de sélection du modèle.
+
+<div class="technical">
+
+Dans le pipeline, la validation croisée utilise des fenêtres d'environ deux années d'apprentissage et 90 jours d'évaluation future, déplacées successivement dans le temps.
+
+</div>
+
+```{r valeurs-dynamiques-modeles, include=FALSE}
+
+# Régression linéaire
+rmse_lm_cv <- resultats_metriques_lm |>
+  filter(.metric == "rmse") |>
+  pull(mean)
+
+mae_lm_cv <- resultats_metriques_lm |>
+  filter(.metric == "mae") |>
+  pull(mean)
+
+rsq_lm_cv <- resultats_metriques_lm |>
+  filter(.metric == "rsq") |>
+  pull(mean)
+
+# Random Forest initial
+rmse_rf_cv <- resultats_metriques_rf |>
+  filter(.metric == "rmse") |>
+  pull(mean)
+
+# XGBoost initial
+rmse_xgb_cv <- resultats_metriques_xgb |>
+  filter(.metric == "rmse") |>
+  pull(mean)
+
+# Meilleurs modèles après tuning
+rmse_rf_opt <- comparaison_finale |>
+  filter(str_detect(
+    tolower(modele),
+    "random|forest"
+  )) |>
+  pull(rmse)
+
+rmse_xgb_opt <- comparaison_finale |>
+  filter(str_detect(
+    tolower(modele),
+    "xg|boost"
+  )) |>
+  pull(rmse)
+
+# Modèle ayant la RMSE la plus faible
+modele_gagnant_cv <- comparaison_finale |>
+  slice_min(
+    order_by = rmse,
+    n = 1,
+    with_ties = FALSE
+  ) |>
+  pull(modele)
+
+rmse_gagnante_cv <- comparaison_finale |>
+  slice_min(
+    order_by = rmse,
+    n = 1,
+    with_ties = FALSE
+  ) |>
+  pull(rmse)
+```
+
+# 5. Comparaison et sélection des modèles
+
+La sélection du modèle final repose sur une comparaison expérimentale de plusieurs approches de Machine Learning évaluées selon le **même protocole de validation croisée temporelle**.
+
+Trois modèles ont été étudiés :
+
+- une **régression linéaire**, utilisée comme modèle de référence ;
+- un **Random Forest**, permettant de modéliser des relations non linéaires et des interactions ;
+- un **XGBoost**, basé sur une succession d'arbres cherchant progressivement à corriger les erreurs de prédiction.
+
+La **RMSE** constitue la métrique principale de sélection : plus elle est faible, meilleure est la capacité du modèle à généraliser sur les périodes futures.
+
+<div class="technical">
+
+<strong>Principe de sélection :</strong> le jeu de test final n'est pas utilisé pour choisir le modèle. Les modèles sont comparés uniquement sur les fenêtres de validation croisée temporelle. Le test final reste donc totalement indépendant jusqu'à la sélection définitive.
+
+</div>
+
+## 5.1 Régression linéaire — modèle de référence
+
+La régression linéaire constitue le **benchmark** du projet. Elle fournit une référence simple et interprétable que les modèles plus complexes doivent être capables de dépasser.
+
+Avant son entraînement, un traitement spécifique de la colinéarité est appliqué : certaines variables déterministes ou redondantes sont supprimées et les très fortes corrélations entre prédicteurs sont contrôlées.
+
+```{r performance-lm-cv}
+
+performance_lm <- resultats_metriques_lm |>
+  filter(.metric %in% c("rmse", "mae", "rsq")) |>
+  mutate(
+    Metrique = recode(
+      .metric,
+      "rmse" = "RMSE",
+      "mae" = "MAE",
+      "rsq" = "R²")) |>
+  select(
+    Metrique,
+    Moyenne = mean,
+    Erreur_standard = std_err)
+kable(
+  performance_lm,
+  digits = 3,
+  caption = "Performance de la régression linéaire en validation croisée temporelle") |>
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover",
+      "condensed"),full_width = FALSE)
+```
+
+<div class="insight">
+
+<strong>Lecture :</strong> la régression linéaire obtient une RMSE moyenne de <strong>`r round(rmse_lm_cv, 2)` unités</strong> et une MAE moyenne de <strong>`r round(mae_lm_cv, 2)` unités</strong> en validation temporelle. Elle constitue donc le niveau de performance que Random Forest et XGBoost doivent améliorer pour justifier leur plus grande complexité.
+
+</div>
+
+
+## 5.2 Random Forest
+
+Le Random Forest combine plusieurs arbres de décision afin de représenter des relations non linéaires et des interactions complexes entre les variables explicatives.
+
+Une première version comportant **500 arbres** est évaluée avec exactement les mêmes fenêtres temporelles que la régression linéaire.
+
+
+```{r performance-rf-cv}
+
+performance_rf <- resultats_metriques_rf |>
+  filter(.metric %in% c("rmse", "mae", "rsq")) |>
+  mutate(
+    Metrique = recode(
+      .metric,
+      "rmse" = "RMSE",
+      "mae" = "MAE",
+      "rsq" = "R²"
+    )) |>
+  select(
+    Metrique,
+    Moyenne = mean,
+    Erreur_standard = std_err)
+
+kable(
+  performance_rf,
+  digits = 3,
+  caption = "Performance du Random Forest en validation croisée temporelle") |>
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover",
+      "condensed"
+    ),
+    full_width = FALSE
+  )
+```
+
+<div class="insight">
+
+<strong>Lecture :</strong> les performances du Random Forest doivent être comparées simultanément sur la RMSE, la MAE et le R². Un gain sur une métrique ne suffit pas nécessairement à justifier un modèle plus complexe si ses erreurs de prédiction restent supérieures sur la métrique principale de sélection.
+
+</div>
+
+## 5.3 XGBoost
+
+XGBoost repose sur une stratégie de **gradient boosting**. Contrairement au Random Forest, les arbres sont construits successivement : chaque nouvel arbre cherche à corriger une partie des erreurs commises par les précédents.
+
+Une première configuration est évaluée avec :
+
+- 500 arbres ;
+- profondeur maximale de 6 ;
+- taux d'apprentissage de 0,05 ;
+- minimum de 10 observations par nœud.
+
+```{r performance-xgb-cv}
+
+performance_xgb <- resultats_metriques_xgb |>
+  filter(.metric %in% c("rmse", "mae", "rsq")) |>
+  mutate(
+    Metrique = recode(
+      .metric,
+      "rmse" = "RMSE",
+      "mae" = "MAE",
+      "rsq" = "R²")) |>
+  select(
+    Metrique,
+    Moyenne = mean,
+    Erreur_standard = std_err)
+
+kable(
+  performance_xgb,
+  digits = 3,
+  caption = "Performance de XGBoost en validation croisée temporelle") |>
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover",
+      "condensed"
+    ),
+    full_width = FALSE
+  )
+```
+
+## 5.4 Comparaison avant optimisation
+
+```{r comparaison-modeles-initiaux}
+
+comparaison_initiale <- comparaison_modeles |>
+  filter(.metric == "rmse") |>
+  select(
+    modele,
+    RMSE = mean,
+    Erreur_standard = std_err) |>
+  arrange(RMSE)
+
+kable(
+  comparaison_initiale,
+  digits = 3,
+  caption = "Comparaison des modèles avant optimisation — RMSE en validation temporelle") |>
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover",
+      "condensed"
+    ),
+    full_width = FALSE
+  )
+```
+
+```{r graphique-comparaison-initiale}
+
+ggplot(
+  comparaison_initiale,
+  aes(
+    x = reorder(modele, RMSE),
+    y = RMSE
+  )
+) +
+
+  geom_col(
+    fill = COULEUR_SECONDAIRE,
+    width = 0.65
+  ) +
+
+  geom_text(
+    aes(
+      label = round(RMSE, 2)
+    ),
+    vjust = -0.5,
+    fontface = "bold"
+  ) +
+
+  labs(
+    title = "Performance prédictive avant optimisation",
+    subtitle = "RMSE moyenne en validation croisée temporelle — plus faible = meilleur",
+    x = NULL,
+    y = "RMSE"
+  ) +
+
+  expand_limits(
+    y = max(comparaison_initiale$RMSE) * 1.08
+  ) +
+
+  theme_pharma()
+```
+
+## 5.5 Optimisation des hyperparamètres
+
+Afin de vérifier que les résultats des modèles complexes ne proviennent pas simplement de paramètres sous-optimaux, une recherche d'hyperparamètres est réalisée.
+
+### Random Forest
+
+Les paramètres optimisés sont :
+
+- `mtry` : nombre de variables candidates considérées à chaque séparation ;
+- `min_n` : nombre minimal d'observations dans un nœud.
+
+Le nombre d'arbres reste fixé à **500** afin de maîtriser le coût de calcul.
+
+### XGBoost
+
+Quatre hyperparamètres principaux sont optimisés :
+
+- `trees` : nombre d'arbres ;
+- `tree_depth` : profondeur maximale ;
+- `learn_rate` : taux d'apprentissage ;
+- `min_n` : nombre minimal d'observations dans un nœud.
+
+Dans les deux cas, la sélection est toujours fondée sur la **RMSE obtenue en validation croisée temporelle**.
+
+```{r tuning-rf}
+
+meilleur_rf_rapport <- show_best(
+  resultats_tuning_rf,
+  metric = "rmse",
+  n = 1) |>
+  select(
+    mtry,
+    min_n,
+    mean,
+    std_err) |>
+  rename(
+    Mtry = mtry,
+    Min_n = min_n,
+    RMSE = mean,
+    Erreur_standard = std_err
+  )
+
+kable(
+  meilleur_rf_rapport,
+  digits = 3,
+  caption = "Meilleure configuration Random Forest") |>
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover"),full_width = FALSE)
+```
+
+```{r tuning-xgboost}
+
+meilleur_xgb_rapport <- show_best(
+  resultats_tuning_xgb,
+  metric = "rmse",
+  n = 1) |>
+  select(
+    trees,
+    tree_depth,
+    learn_rate,
+    min_n,
+    mean,
+    std_err) |>
+  rename(
+    Trees = trees,
+    Profondeur = tree_depth,
+    Learning_rate = learn_rate,
+    Min_n = min_n,
+    RMSE = mean,
+    Erreur_standard = std_err
+  )
+
+kable(
+  meilleur_xgb_rapport,
+  digits = 4,
+  caption = "Meilleure configuration XGBoost") |>
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover" ), full_width = TRUE)
+```
+
+## 5.6 Comparaison finale après optimisation
+
+La comparaison définitive oppose maintenant la régression linéaire aux meilleures configurations obtenues après tuning pour Random Forest et XGBoost.
+
+```{r comparaison-finale-modeles}
+
+comparaison_finale_affichage <- comparaison_finale |>
+  rename(
+    Modèle = modele,
+    RMSE = rmse)
+kable(
+  comparaison_finale_affichage,
+  digits = 3,
+  caption = "Classement final des modèles selon la RMSE temporelle") |>
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover",
+      "condensed"
+    ),
+    full_width = FALSE
+  )
+```
+
+```{r graphique-comparaison-finale}
+
+ggplot(
+  comparaison_finale,
+  aes(
+    x = reorder(modele, rmse),
+    y = rmse
+  )
+) +
+
+  geom_col(
+    fill = COULEUR_ACCENT,
+    width = 0.65
+  ) +
+
+  geom_text(
+    aes(
+      label = round(rmse, 2)
+    ),
+    vjust = -0.6,
+    fontface = "bold"
+  ) +
+
+  labs(
+    title = "Sélection finale du modèle",
+    subtitle = "Comparaison de la RMSE après optimisation",
+    x = NULL,
+    y = "RMSE"
+  ) +
+
+  expand_limits(
+    y = max(comparaison_finale$rmse) * 1.08
+  ) +
+
+  theme_pharma()
+```
+
+## 5.7 Modèle retenu
+
+À l'issue de la comparaison finale, le modèle présentant actuellement la RMSE moyenne la plus faible en validation croisée temporelle est **`r modele_gagnant_cv`**, avec une RMSE de **`r round(rmse_gagnante_cv, 2)` unités**.
+
+La sélection est effectuée uniquement à partir des performances obtenues sur les fenêtres de validation temporelle, avant toute consultation du jeu de test final.
+
+```{r decision-modele-dynamique, results='asis'}
+
+if(
+  str_detect(
+    tolower(modele_gagnant_cv),
+    "lin"
+  )
+){
+
+  cat(
+    glue(
+'
+<div class="business">
+
+<strong>Décision de modélisation</strong>
+
+La sélection ne repose pas sur la sophistication algorithmique mais sur la capacité de généralisation observée.
+
+La régression linéaire obtient actuellement une RMSE de <strong>{round(rmse_lm_cv, 2)}</strong>, contre <strong>{round(rmse_rf_opt, 2)}</strong> pour le Random Forest optimisé et <strong>{round(rmse_xgb_opt, 2)}</strong> pour XGBoost optimisé.
+
+Dans cette configuration, la régression linéaire reste donc le modèle présentant la meilleure généralisation sur les périodes futures évaluées.
+
+</div>
+'))
+
+}else{
+
+  cat(
+    glue(
+'
+<div class="warning">
+<strong>Attention — évolution de la sélection du modèle</strong>
+Les nouvelles performances de validation temporelle indiquent que <strong>{modele_gagnant_cv}</strong> présente désormais la RMSE la plus faible ({round(rmse_gagnante_cv, 2)}).
+Le modèle actuellement industrialisé étant la régression linéaire, cette évolution doit être analysée avant de modifier le modèle déployé en production.
+
+</div>
+'))
+}
+```
+
+# 6. Performance prédictive hors échantillon
+
+L'évaluation finale est réalisée sur les 20 % d'observations les plus récentes, qui n'ont pas participé à l'entraînement ni à la sélection du modèle.
+
+```{r metriques-finales}
+
+table_metriques <- metriques_test_lm |>
+  mutate(
+    indicateur = recode(
+      .metric,
+      "rmse" = "RMSE",
+      "rsq" = "R²",
+      "mae" = "MAE"
+    ),
+
+    interpretation = case_when(
+      .metric == "mae" ~
+        "Erreur absolue moyenne de prédiction",
+
+      .metric == "rmse" ~
+        "Erreur quadratique, plus sensible aux fortes erreurs",
+
+      .metric == "rsq" ~
+        "Part de la variabilité expliquée",
+
+      TRUE ~ ""
+    )
+  ) |>
+
+  select(
+    indicateur,
+    .estimate,
+    interpretation
+  ) |>
+
+  rename(
+    Valeur = .estimate,
+    Interprétation = interpretation
+  )
+
+kable(
+  table_metriques,
+  digits = 3,
+  caption = "Performances du modèle sur le test final"
+) |>
+
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover"
+    ),
+    full_width = FALSE
+  )
+```
+
+<div class="insight">
+
+<strong>Résultats observés :</strong>
+
+La MAE est de <strong>`r round(mae_final, 2)` unités</strong>. Cela signifie que l'écart absolu entre la prévision et la valeur observée est en moyenne de `r round(mae_final, 2)` unités.
+
+La RMSE est de <strong>`r round(rmse_final, 2)` unités</strong>. Une RMSE supérieure à la MAE traduit la présence de certaines erreurs de prédiction plus importantes.
+
+Le R² est de <strong>`r round(rsq_final, 3)`</strong>, soit environ <strong>`r scales::percent(rsq_final, accuracy = 0.1)`</strong> de la variabilité expliquée sur le jeu de test.
+
+</div>
+
+```{r reel-predit-temporel}
+
+predictions_test_lm |>
+  select(
+    date,
+    reel = analgesiques_antipyretiques_anilides,
+    predit = .pred
+  ) |>
+
+  pivot_longer(
+    cols = c(reel,predit),
+    names_to = "serie",
+    values_to = "ventes"
+  ) |>
+
+  mutate(
+    serie = recode(
+      serie,
+      reel = "Ventes observées",
+      predit = "Ventes prédites"
+    )
+  ) |>
+
+  ggplot(
+    aes(
+      x = date,
+      y = ventes,
+      color = serie
+    )
+  ) +
+
+  geom_line(
+    linewidth = .75,
+    alpha = .9
+  ) +
+
+  scale_color_manual(
+    values = c(
+      "Ventes observées" = COULEUR_PRIMAIRE,
+      "Ventes prédites" = COULEUR_DRIFT
+    )
+  ) +
+
+  labs(
+    title = "Ventes observées et ventes prédites",
+    subtitle = "Évaluation sur la période de test totalement hors apprentissage",
+    x = NULL,
+    y = "Ventes",
+    color = NULL
+  ) +
+
+  theme_pharma()
+```
+
+```{r reel-predit-scatter}
+
+ggplot(
+  predictions_test_lm,
+  aes(
+    x = analgesiques_antipyretiques_anilides,
+    y = .pred
+  )
+) +
+
+  geom_point(
+    alpha = .55,
+    color = COULEUR_SECONDAIRE,
+    size = 2
+  ) +
+
+  geom_abline(
+    slope = 1,
+    intercept = 0,
+    linetype = "dashed",
+    color = COULEUR_DRIFT,
+    linewidth = .8
+  ) +
+
+  coord_equal() +
+
+  labs(
+    title = "Correspondance entre ventes observées et prédites",
+    subtitle = "La diagonale représente une prédiction parfaite",
+    x = "Ventes observées",
+    y = "Ventes prédites"
+  ) +
+
+  theme_pharma()
+```
+
+```{r analyse-residus}
+
+residus_test <- predictions_test_lm |>
+  mutate(
+    residu =
+      analgesiques_antipyretiques_anilides -
+      .pred
+  )
+
+ggplot(
+  residus_test,
+  aes(
+    x = date,
+    y = residu
+  )
+) +
+
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed",
+    color = COULEUR_DRIFT
+  ) +
+
+  geom_line(
+    color = COULEUR_PRIMAIRE,
+    linewidth = .65
+  ) +
+
+  labs(
+    title = "Évolution temporelle des erreurs de prédiction",
+    subtitle = "Résidu = valeur observée - valeur prédite",
+    x = NULL,
+    y = "Résidu"
+  ) +
+
+  theme_pharma()
+```
+
+
+```{r distribution-residus}
+
+ggplot(
+  residus_test,
+  aes(x = residu)
+) +
+
+  geom_histogram(
+    bins = 30,
+    fill = COULEUR_SECONDAIRE,
+    color = "white"
+  ) +
+
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    color = COULEUR_DRIFT
+  ) +
+
+  labs(
+    title = "Distribution des erreurs du modèle",
+    subtitle = "Une distribution centrée autour de zéro est recherchée",
+    x = "Erreur de prédiction",
+    y = "Nombre d'observations"
+  ) +
+
+  theme_pharma()
+```
+
+# 7. Exemple concret d'utilisation du modèle
+
+L'intérêt du modèle est de pouvoir produire une estimation à partir d'une situation opérationnelle donnée.
+
+
+```{r exemple-prediction}
+
+exemple <- test_data |>
+  slice(1)
+
+prediction_exemple <- predict(
+  modele_lm_final,
+  new_data = exemple
+)
+
+exemple_affichage <- exemple |>
+  select(
+    date,
+    jour_semaine,
+    ventes_lag_1,
+    ventes_lag_7,
+    ventes_lag_14,
+    ventes_lag_30,
+    moyenne_mobile_7j,
+    moyenne_mobile_30j,
+    variation_7j,
+    volatilite_7j
+  ) |>
+
+  mutate(
+    prediction =
+      prediction_exemple$.pred
+  )
+
+kable(
+  exemple_affichage,
+  digits = 2,
+  caption = "Exemple d'entrée du modèle et prédiction associée"
+) |>
+
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "responsive"
+    ),
+    full_width = TRUE
+  )
+```
+
+# 8. Industrialisation du modèle
+
+L'objectif n'est pas uniquement d'obtenir un modèle performant dans RStudio.
+
+Pour être réellement exploitable, le modèle doit pouvoir recevoir une requête externe et retourner automatiquement une prédiction.
+
+## 8.1 API REST avec Plumber
+
+Le modèle est exposé via une API REST développée avec **Plumber**.
+
+Deux endpoints principaux sont disponibles :
+
+| Endpoint | Méthode | Fonction |
+|---|---|---|
+| `/health` | GET | vérifier l'état du service |
+| `/predict` | POST | obtenir une prédiction |
+
+L'endpoint `/predict` reçoit les caractéristiques nécessaires sous forme JSON et retourne une prédiction.
+
+## 8.2 Exemple de réponse
+
+```json
+{
+  "status": ["success"],
+  "code": [200],
+  "prediction": [23.7751]
+}
+```
+
+## 8.3 API publique
+
+L'API déployée est accessible à l'adresse :
+
+`https://prediction-ventes-pharma.onrender.com`
+
+Endpoint de santé :
+
+`https://prediction-ventes-pharma.onrender.com/health`
+
+
+# 9. Sécurisation de l'API
+
+Plusieurs mécanismes ont été ajoutés afin de limiter l'exposition du service.
+
+## Authentification
+
+L'endpoint `/predict` nécessite une clé transmise dans le header :
+
+```text
+X-API-Key
+```
+
+La clé n'est pas enregistrée dans le code source.
+
+Elle est injectée comme variable d'environnement lors de l'exécution du service.
+
+## Gestion des erreurs
+
+Les principaux codes retournés sont :
+
+| Code | Signification |
+|---|---|
+| 200 | prédiction réussie |
+| 400 | données invalides |
+| 401 | authentification refusée |
+| 413 | requête trop volumineuse |
+
+Les erreurs publiques sont volontairement génériques afin de ne pas divulguer d'informations techniques internes.
+
+## Limitation de la requête
+
+La taille du corps JSON est limitée afin de réduire les risques d'abus et de consommation excessive de ressources.
+
+
+# 10. Architecture MLOps
+
+## 10.1 Conteneurisation
+
+L'environnement d'exécution est encapsulé dans une image Docker comprenant :
+
+- R ;
+- les dépendances du projet ;
+- le workflow entraîné ;
+- l'API Plumber ;
+- la référence de monitoring.
+
+Cette approche améliore la reproductibilité entre environnement local et environnement cloud.
+
+## 10.2 CI/CD
+
+Un pipeline GitHub Actions automatise :
+
+```text
+Push sur main
+      ↓
+Checkout du dépôt
+      ↓
+Construction Docker
+      ↓
+Authentification Docker Hub
+      ↓
+Publication de l'image
+```
+
+## 10.3 Déploiement
+
+L'image est publiée dans Docker Hub puis exécutée sur Render.
+
+L'application écoute sur le port fourni dynamiquement par l'environnement cloud.
+
+
+Données de ventes
+        │
+        ▼
+Feature engineering
+        │
+        ▼
+Validation temporelle
+        │
+        ▼
+Modèle de prédiction
+        │
+        ▼
+API Plumber
+        │
+        ▼
+Docker
+        │
+        ▼
+GitHub Actions
+        │
+        ▼
+Docker Hub
+        │
+        ▼
+Render
+        │
+        ▼
+API publique
+        │
+        ▼
+Monitoring / Drift
+
+# 11. Monitoring de production
+
+Une fois déployé, un modèle ne peut pas être considéré comme définitivement valide.
+
+Le comportement de l'API et les données reçues doivent être surveillés dans le temps.
+
+## 11.1 Indicateurs API
+
+```{r monitoring-api}
+
+kpi_api <- calculer_kpi_api()
+
+kable(
+  kpi_api,
+  digits = 3,
+  caption = "Indicateurs techniques de l'API"
+) |>
+
+  kable_styling(
+    bootstrap_options = c(
+      "striped",
+      "hover"
+    ),
+    full_width = TRUE
+  )
+```
+
+# 12. Détection du Data Drift
+
+## 12.1 Pourquoi surveiller le drift ?
+
+Un modèle apprend dans un environnement statistique donné.
+
+Avec le temps, les données reçues peuvent changer :
+
+- variation du niveau de ventes ;
+- modification de la saisonnalité ;
+- nouvelles habitudes de consommation ;
+- distributions différentes ;
+- valeurs hors des plages connues.
+
+Cette évolution est appelée **data drift**.
+
+## 12.2 Indicateur PSI
+
+Le **Population Stability Index (PSI)** compare la distribution d'une variable en production à sa distribution de référence.
+
+Dans ce projet :
+
+- PSI < 0,10 → `OK`
+- PSI entre 0,10 et 0,25 → `A_SURVEILLER`
+- PSI ≥ 0,25 → `DRIFT_DETECTE`
+
+Ces seuils sont utilisés comme règles opérationnelles du projet et doivent être interprétés conjointement avec les autres indicateurs de dérive.
+
+```{r resultat-monitoring}
+
+resultat_monitoring <- tryCatch(
+
+  analyser_drift_complet(
+    exporter = FALSE
+  ),
+
+  error = function(e){
+
+    list(
+      statut_global = "NON_DISPONIBLE",
+      message = conditionMessage(e)
+    )
+  }
+)
+
+if(!is.null(resultat_monitoring$synthese)){
+
+  kable(
+    resultat_monitoring$synthese,
+    caption = "Synthèse globale du monitoring de drift"
+  ) |>
+    kable_styling(
+      bootstrap_options = c(
+        "striped",
+        "responsive"
+      ),
+      full_width = TRUE
+    )
+
+}else{
+
+  cat(
+    paste0(
+      "**Monitoring :** ",
+      resultat_monitoring$statut_global,
+      "\n\n",
+      resultat_monitoring$message
+    )
+  )
+}
+```
+
+
+```{r graphique-psi}
+
+if(
+  !is.null(resultat_monitoring$drift_variables) &&
+  nrow(resultat_monitoring$drift_variables) > 0
+){
+
+  drift_plot <- resultat_monitoring$drift_variables |>
+
+    filter(
+      !is.na(psi)
+    ) |>
+
+    mutate(
+      variable = forcats::fct_reorder(
+        variable,
+        psi
+      )
+    )
+
+
+  ggplot(
+    drift_plot,
+    aes(
+      x = variable,
+      y = psi,
+      fill = statut
+    )
+  ) +
+
+    geom_col(
+      width = .7
+    ) +
+
+    geom_hline(
+      yintercept = MONITORING_CONFIG$psi_surveillance,
+      linetype = "dashed",
+      color = COULEUR_SURVEILLANCE
+    ) +
+
+    geom_hline(
+      yintercept = MONITORING_CONFIG$psi_drift,
+      linetype = "dashed",
+      color = COULEUR_DRIFT
+    ) +
+
+    coord_flip() +
+
+    scale_fill_manual(
+      values = c(
+        "OK" = COULEUR_OK,
+        "A_SURVEILLER" = COULEUR_SURVEILLANCE,
+        "DRIFT_DETECTE" = COULEUR_DRIFT
+      )
+    ) +
+
+    labs(
+      title = "Stabilité des variables de production",
+      subtitle = "Population Stability Index par variable",
+      x = NULL,
+      y = "PSI",
+      fill = "Statut"
+    ) +
+
+    theme_pharma()
+
+}
+```
+
+```{r tableau-drift}
+
+if(
+  !is.null(resultat_monitoring$drift_variables)
+){
+
+  tableau_drift <- resultat_monitoring$drift_variables |>
+
+    select(
+      variable,
+      type,
+      psi,
+      moyenne_reference,
+      moyenne_production,
+      mean_shift_z,
+      taux_hors_plage,
+      statut
+    ) |>
+
+    arrange(
+      desc(psi)
+    )
+
+
+  kable(
+    tableau_drift,
+    digits = 3,
+    caption = "Diagnostic détaillé des variables surveillées"
+  ) |>
+
+    kable_styling(
+      bootstrap_options = c(
+        "striped",
+        "hover",
+        "responsive"
+      ),
+      full_width = TRUE
+    )
+
+}
+```
+
+## 12.3 Dérive des prédictions
+
+La surveillance ne porte pas uniquement sur les variables d'entrée.
+
+La distribution des prédictions elles-mêmes est comparée à la distribution obtenue sur la population de référence.
+
+Une modification importante peut signaler :
+
+- une transformation du comportement des données ;
+- une modification structurelle des ventes ;
+- une extrapolation du modèle vers des situations moins représentées pendant l'apprentissage.
+
+```{r prediction-drift}
+
+if(
+  !is.null(resultat_monitoring$drift_variables)
+){
+
+  resultat_monitoring$drift_variables |>
+
+    filter(
+      type == "prediction"
+    ) |>
+
+    select(
+      variable,
+      psi,
+      moyenne_reference,
+      moyenne_production,
+      mediane_reference,
+      mediane_production,
+      mean_shift_z,
+      statut
+    ) |>
+
+    kable(
+      digits = 3,
+      caption = "Monitoring de la distribution des prédictions"
+    ) |>
+
+    kable_styling(
+      bootstrap_options = c(
+        "striped",
+        "responsive"
+      ),
+      full_width = FALSE
+    )
+
+}
+```
+
+# 13. Qualité des données en production
+
+```{r qualite-production}
+
+if(
+  !is.null(resultat_monitoring$qualite)
+){
+
+  resultat_monitoring$qualite |>
+
+    kable(
+      caption = "Contrôles qualité des données reçues en production"
+    ) |>
+
+    kable_styling(
+      bootstrap_options = c(
+        "striped",
+        "responsive"
+      )
+    )
+
+}
+```
+
+# 14. Architecture technique complète
+
+```text
+┌─────────────────────────────────────────┐
+│       DONNÉES DE VENTES HISTORIQUES     │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│         PRÉPARATION DES DONNÉES         │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│           FEATURE ENGINEERING           │
+│                                         │
+│ Lags 1/7/14/30 jours                    │
+│ Moyennes mobiles 7j / 30j               │
+│ Tendance                                │
+│ Variation                               │
+│ Volatilité                              │
+│ Variables calendaires                   │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│       VALIDATION CROISÉE TEMPORELLE     │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│          MODÈLE DE PRÉDICTION           │
+│            Régression linéaire          │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│             TEST FINAL                  │
+│       MAE / RMSE / R² / résidus         │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│              API PLUMBER                │
+│         /health     /predict            │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│               SÉCURITÉ                  │
+│ API KEY / validation / gestion erreurs  │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│                DOCKER                   │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│          GITHUB ACTIONS CI/CD           │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│              DOCKER HUB                 │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│               RENDER                    │
+│           API publique cloud            │
+└────────────────────┬────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────┐
+│          MONITORING / DRIFT             │
+│ PSI / latence / erreurs / qualité       │
+└─────────────────────────────────────────┘
+```
+
+# 15. Traçabilité et reproductibilité
+
+| Élément | Implémentation |
+|---|---|
+| Langage | R |
+| Framework ML | tidymodels |
+| API | Plumber |
+| Modèle final | Régression linéaire |
+| Version du modèle | 1.0 |
+| Conteneurisation | Docker |
+| Registry | Docker Hub |
+| CI/CD | GitHub Actions |
+| Hébergement | Render |
+| Sécurité API | X-API-Key |
+| Monitoring | logs API + PSI + contrôles qualité |
+| Gestion environnement R | renv |
+| Versionnement | Git / GitHub |
+
+
+```{r reproductibilite}
+
+reference_monitoring <- readRDS(
+  "models/monitoring_reference.rds"
+)
+
+infos_modele <- tibble(
+  Element = c(
+    "Version du modèle",
+    "Date de création de la référence",
+    "Observations de référence",
+    "Variables numériques monitorées",
+    "Variables catégorielles monitorées",
+    "Version R"
+  ),
+
+  Valeur = c(
+    reference_monitoring$version_modele,
+    as.character(reference_monitoring$date_creation),
+    reference_monitoring$nb_observations,
+    length(reference_monitoring$variables_numeriques),
+    length(reference_monitoring$variables_categorielles),
+    R.version.string
+  )
+)
+
+kable(
+  infos_modele,
+  caption = "Informations de traçabilité du modèle"
+) |>
+
+  kable_styling(
+    bootstrap_options = "striped",
+    full_width = FALSE
+  )
+```
+
+# 16. Limites et axes d'amélioration
+
+Malgré l'industrialisation complète du pipeline, plusieurs limites doivent être conservées à l'esprit.
+
+## 16.1 Performance prédictive
+
+Le R² obtenu sur le test final indique qu'une part importante de la variabilité reste non expliquée.
+
+Le modèle pourrait être enrichi par :
+
+- davantage de variables métier ;
+- données promotionnelles ;
+- informations de prix ;
+- événements sanitaires ;
+- ruptures ou tensions d'approvisionnement ;
+- météo lorsque son impact est pertinent ;
+- calendriers de vacances ;
+- variables liées à l'épidémiologie.
+
+## 16.2 Modèles alternatifs
+
+La comparaison actuelle intègre déjà trois familles de modèles :
+
+- régression linéaire ;
+- Random Forest ;
+- XGBoost.
+
+Random Forest et XGBoost ont également fait l'objet d'une optimisation de leurs hyperparamètres avant la comparaison finale.
+
+Les travaux futurs pourraient donc plutôt explorer des approches complémentaires :
+
+- modèles autorégressifs dédiés aux séries temporelles ;
+- modèles de gradient boosting supplémentaires ;
+- modèles combinant prévision temporelle et Machine Learning ;
+- méthodes d'ensemble associant plusieurs modèles.
+
+L'introduction d'un modèle supplémentaire ne serait justifiée que s'il apporte une amélioration mesurable, stable et reproductible sur la validation temporelle.
+
+# 17. Conclusion générale
+
+Ce projet avait pour objectif initial de **prédire les ventes pharmaceutiques** à partir de leur historique et de leurs caractéristiques temporelles.
+
+La démarche mise en œuvre va au-delà de la construction d'un modèle isolé.
+
+Le pipeline couvre désormais l'ensemble du cycle de vie :
+
+**données → variables → modèle → évaluation → API → sécurité → Docker → CI/CD → cloud → monitoring.**
+
+Le modèle final permet de transformer une situation de vente décrite par son historique récent et son contexte temporel en une estimation quantitative des ventes futures.
+
+L'évaluation hors échantillon montre que le modèle restitue une partie réelle du signal présent dans les données, avec une MAE d'environ 9,5 unités, une RMSE d'environ 12,4 unités et un R² proche de 0,39.
+
+L'apport principal du projet réside cependant dans l'association de deux dimensions :
+
+1. **la valeur analytique**, grâce à la prévision des ventes ;
+2. **la capacité opérationnelle**, grâce à une architecture permettant d'exécuter, sécuriser, déployer et surveiller cette prédiction.
+
+<div class="business">
+
+<strong>Conclusion métier</strong>
+
+La solution constitue un socle exploitable pour construire un véritable système d'aide à l'anticipation de la demande pharmaceutique.
+
+Elle permet non seulement de produire une prévision, mais également de contrôler dans le temps si les conditions dans lesquelles le modèle a été entraîné restent compatibles avec son utilisation en production.
+
+</div>
+
+# Annexes
+
+## A. Variables utilisées par l'API
+
+| Variable | Description |
+|---|---|
+| `date` | date de prédiction |
+| `annee` | année |
+| `mois` | mois |
+| `jour_mois` | jour du mois |
+| `semaine_annee` | semaine |
+| `trimestre` | trimestre |
+| `jour_semaine` | jour de la semaine |
+| `weekend` | indicateur week-end |
+| `tendance` | position temporelle |
+| `debut_mois` | indicateur début de mois |
+| `fin_mois` | indicateur fin de mois |
+| `ventes_lag_1` | ventes J-1 |
+| `ventes_lag_7` | ventes J-7 |
+| `ventes_lag_14` | ventes J-14 |
+| `ventes_lag_30` | ventes J-30 |
+| `moyenne_mobile_7j` | moyenne mobile 7 jours |
+| `moyenne_mobile_30j` | moyenne mobile 30 jours |
+| `variation_7j` | variation récente |
+| `ecart_moyennes_mobiles` | différence entre tendances court et moyen terme |
+| `volatilite_7j` | volatilité récente |
+
+## B. Endpoints
+
+### Santé
+
+```text
+GET /health
+```
+
+### Prédiction
+
+```text
+POST /predict
+```
+
+avec :
+
+```text
+X-API-Key
+```
+
+## C. URL du service
+
+```text
+https://prediction-ventes-pharma.onrender.com
+```
+
+## D. Organisation du projet
+
+```text
+prediction-ventes-pharma/
+│
+├── .github/
+│   └── workflows/
+│
+├── api/
+│   └── plumber.R
+│
+├── data/
+│
+├── docker/
+│   └── Dockerfile
+│
+├── models/
+│   ├── modele_ventes_pharma_lm.rds
+│   └── monitoring_reference.rds
+│
+├── outputs/
+│   ├── figures/
+│   ├── logs/
+│   ├── metrics/
+│   └── monitoring/
+│
+├── R/
+│   ├── 00_packages.R
+│   ├── 01_configuration.R
+│   ├── 02_preparation_donnees.R
+│   ├── 03_feature_engineering.R
+│   ├── 04_split_temporel.R
+│   ├── 05_recipe.R
+│   ├── 06_modeles.R
+│   ├── 07_tuning.R
+│   ├── 08_evaluation_finale.R
+│   ├── 09_sauvegarde_modele.R
+│   ├── 10_test_rechargement.R
+│   ├── 11_fonction_prediction.R
+│   ├── 12_logs_api.R
+│   └── 13_monitoring_drift.R
+│
+├── reports/
+│   └── rapport_final_prediction_ventes_pharma.Rmd
+│
+├── renv/
+├── tests/
+├── renv.lock
+└── README.md
+```
+
+
+<div class="ia-outro"><span class="dot"></span>FIN DE TRANSMISSION — UNITE IA-PHARMA — RAPPORT INTEGRALEMENT RESTITUE</div>
