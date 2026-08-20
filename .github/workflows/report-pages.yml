@@ -54,7 +54,8 @@ jobs:
             "scales",
             "kableExtra",
             "glue",
-            "tseries"
+            "tseries",
+            "janitor"
           ), repos="https://cloud.r-project.org")'
 
       - name: Create docs directory
