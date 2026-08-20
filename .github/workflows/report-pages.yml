@@ -8,13 +8,17 @@ on:
     - cron: "0 6 * * *"
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
 jobs:
   build-report:
     runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
 
@@ -161,26 +165,27 @@ jobs:
 
 
       # ========================================================================
-      # 9. Publication automatique dans GitHub
+      # 9. Configuration GitHub Pages
       # ========================================================================
 
-      - name: Commit generated report
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
 
-          git add docs/index.html
 
-          if git diff --cached --quiet; then
+      # ========================================================================
+      # 10. Upload du site généré
+      # ========================================================================
 
-            echo "Aucune modification du rapport."
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs
 
-          else
 
-            git commit -m "Mise à jour automatique du rapport"
+      # ========================================================================
+      # 11. Déploiement public GitHub Pages
+      # ========================================================================
 
-            git pull --rebase origin main
-
-            git push origin main
-
-          fi
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
