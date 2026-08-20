@@ -53,7 +53,7 @@ jobs:
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           cache-version: 1
-
+      
           packages: |
             any::rmarkdown
             any::knitr
@@ -61,16 +61,17 @@ jobs:
             any::glue
             any::scales
             any::tseries
-
+      
             any::tidyverse
             any::janitor
             any::slider
             any::tidymodels
             any::corrplot
-
+      
             any::ranger
             any::xgboost
             any::plumber
+            any::testthat
 
 
       # ========================================================================
@@ -94,7 +95,8 @@ jobs:
             "corrplot",
             "ranger",
             "xgboost",
-            "plumber"
+            "plumber",
+            "testthat"
           )
 
           manquants <- packages[
