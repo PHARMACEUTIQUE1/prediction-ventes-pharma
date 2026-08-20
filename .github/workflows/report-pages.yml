@@ -61,6 +61,7 @@ jobs:
             any::glue
             any::scales
             any::tseries
+            any::httr2
       
             any::tidyverse
             any::janitor
@@ -96,7 +97,8 @@ jobs:
             "ranger",
             "xgboost",
             "plumber",
-            "testthat"
+            "testthat", 
+            "httr2"
           )
 
           manquants <- packages[
