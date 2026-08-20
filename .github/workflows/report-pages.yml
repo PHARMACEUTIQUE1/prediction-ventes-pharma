@@ -14,24 +14,49 @@ permissions:
 
 jobs:
   build-report:
+
     runs-on: ubuntu-latest
 
     steps:
+
+      # ========================================================================
+      # 1. Récupération du dépôt
+      # ========================================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+
+      # ========================================================================
+      # 2. Installation de R
+      # ========================================================================
 
       - name: Setup R
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: "4.3.3"
 
+
+      # ========================================================================
+      # 3. Installation de Pandoc
+      # ========================================================================
+
       - name: Setup Pandoc
         uses: r-lib/actions/setup-pandoc@v2
+
+
+      # ========================================================================
+      # 4. Dépendances système Linux
+      # ========================================================================
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
+            build-essential \
+            cmake \
+            pkg-config \
             libcurl4-openssl-dev \
             libssl-dev \
             libxml2-dev \
@@ -40,43 +65,86 @@ jobs:
             libfribidi-dev \
             libfreetype6-dev \
             libpng-dev \
-            libtiff5-dev \
+            libtiff-dev \
             libjpeg-dev \
-            libuv1-dev
+            libuv1-dev \
+            libsodium-dev \
+            libgit2-dev \
+            libicu-dev \
+            zlib1g-dev
+
+
+      # ========================================================================
+      # 5. Installation des packages R
+      # ========================================================================
 
       - name: Install R packages
         run: |
-          Rscript -e 'install.packages(c(
-            "rmarkdown",
-            "knitr",
-            "kableExtra",
-            "glue",
-            "scales",
-            "tseries",
-      
-            "tidyverse",
-            "janitor",
-            "slider",
-            "tidymodels",
-            "corrplot",
-      
-            "ranger",
-            "xgboost",
-            "plumber"
-          ), repos="https://cloud.r-project.org")'
+          Rscript -e 'install.packages(
+            c(
+              "rmarkdown",
+              "knitr",
+              "kableExtra",
+              "glue",
+              "scales",
+              "tseries",
+
+              "tidyverse",
+              "janitor",
+              "slider",
+              "tidymodels",
+              "corrplot",
+
+              "ranger",
+              "xgboost",
+              "plumber"
+            ),
+            repos = "https://cloud.r-project.org",
+            dependencies = TRUE
+          )'
+
+
+      # ========================================================================
+      # 6. Création du dossier GitHub Pages
+      # ========================================================================
 
       - name: Create docs directory
         run: |
           mkdir -p docs
 
+
+      # ========================================================================
+      # 7. Génération du rapport HTML
+      # ========================================================================
+
       - name: Build HTML report
         run: |
           Rscript -e 'rmarkdown::render(
-            "reports/rapport_final_prediction_ventes_pharma.Rmd",
+            input = "reports/rapport_final_prediction_ventes_pharma.Rmd",
             output_file = "index.html",
             output_dir = "docs",
             envir = new.env()
           )'
+
+
+      # ========================================================================
+      # 8. Vérification du rapport généré
+      # ========================================================================
+
+      - name: Check generated report
+        run: |
+          if [ ! -f "docs/index.html" ]; then
+            echo "ERREUR : docs/index.html n'a pas été généré."
+            exit 1
+          fi
+
+          echo "Rapport HTML généré avec succès."
+          ls -lh docs/index.html
+
+
+      # ========================================================================
+      # 9. Publication du nouveau rapport dans le dépôt
+      # ========================================================================
 
       - name: Commit generated report
         run: |
@@ -86,8 +154,15 @@ jobs:
           git add docs/index.html
 
           if git diff --cached --quiet; then
+
             echo "Aucune modification du rapport."
+
           else
+
             git commit -m "Mise à jour automatique du rapport"
-            git push
+
+            git pull --rebase origin main
+
+            git push origin main
+
           fi
