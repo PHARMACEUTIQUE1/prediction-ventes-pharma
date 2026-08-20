@@ -563,14 +563,14 @@ window.addEventListener('DOMContentLoaded', function(){
 </script>
 
 <div class="ia-boot">
-  <div class="ia-tag">◉ UNITE D'ANALYSE IA-PHARMA — SEQUENCE DE DEMARRAGE TERMINEE</div>
-  <div class="ia-avatar-row">
-    <div class="ia-avatar">🤖</div>
-    <div>
-      <p class="ia-typer">Bonjour. Unite IA-PHARMA en ligne. Rapport de prediction charge, lecture en cours...</p>
-      <p class="ia-note">Tous les resultats, chiffres, tableaux et scripts presentes ci-dessous sont strictement identiques au rapport original. Seule mon interface de presentation a ete reconstruite.</p>
-    </div>
-  </div>
+<div class="ia-tag">◉ UNITE D'ANALYSE — SEQUENCE DE DEMARRAGE TERMINEE</div>
+<div class="ia-avatar-row">
+<div class="ia-avatar"></div>
+<div>
+<p class="ia-typer">Bonjour. Rapport de prediction charge, lecture en cours...</p>
+<p class="ia-note">Tous les résultats, chiffres, tableaux et scripts présentés ci-dessous sont issus du pipeline analytique du projet. Cette interface constitue la couche de présentation du rapport.</p>
+</div>
+</div>
 </div>
 
   
