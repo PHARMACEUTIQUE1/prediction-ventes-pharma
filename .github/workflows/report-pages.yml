@@ -14,7 +14,6 @@ permissions:
 
 jobs:
   build-report:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -35,6 +34,7 @@ jobs:
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: "4.3.3"
+          use-public-rspm: true
 
 
       # ========================================================================
@@ -46,62 +46,77 @@ jobs:
 
 
       # ========================================================================
-      # 4. Dépendances système Linux
+      # 4. Dépendances R + cache automatique
       # ========================================================================
 
-      - name: Install system dependencies
+      - name: Setup R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 1
+
+          packages: |
+            any::rmarkdown
+            any::knitr
+            any::kableExtra
+            any::glue
+            any::scales
+            any::tseries
+
+            any::tidyverse
+            any::janitor
+            any::slider
+            any::tidymodels
+            any::corrplot
+
+            any::ranger
+            any::xgboost
+            any::plumber
+
+
+      # ========================================================================
+      # 5. Vérification des packages essentiels
+      # ========================================================================
+
+      - name: Check required R packages
         run: |
-          sudo apt-get update
+          Rscript -e '
+          packages <- c(
+            "rmarkdown",
+            "knitr",
+            "kableExtra",
+            "glue",
+            "scales",
+            "tseries",
+            "tidyverse",
+            "janitor",
+            "slider",
+            "tidymodels",
+            "corrplot",
+            "ranger",
+            "xgboost",
+            "plumber"
+          )
 
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            pkg-config \
-            libcurl4-openssl-dev \
-            libssl-dev \
-            libxml2-dev \
-            libfontconfig1-dev \
-            libharfbuzz-dev \
-            libfribidi-dev \
-            libfreetype6-dev \
-            libpng-dev \
-            libtiff-dev \
-            libjpeg-dev \
-            libuv1-dev \
-            libsodium-dev \
-            libgit2-dev \
-            libicu-dev \
-            zlib1g-dev
+          manquants <- packages[
+            !vapply(
+              packages,
+              requireNamespace,
+              quietly = TRUE,
+              FUN.VALUE = logical(1)
+            )
+          ]
 
+          if(length(manquants) > 0){
+            stop(
+              paste(
+                "Packages manquants :",
+                paste(manquants, collapse = ", ")
+              )
+            )
+          }
 
-      # ========================================================================
-      # 5. Installation des packages R
-      # ========================================================================
-
-      - name: Install R packages
-        run: |
-          Rscript -e 'install.packages(
-            c(
-              "rmarkdown",
-              "knitr",
-              "kableExtra",
-              "glue",
-              "scales",
-              "tseries",
-
-              "tidyverse",
-              "janitor",
-              "slider",
-              "tidymodels",
-              "corrplot",
-
-              "ranger",
-              "xgboost",
-              "plumber"
-            ),
-            repos = "https://cloud.r-project.org",
-            dependencies = TRUE
-          )'
+          cat("Tous les packages R requis sont disponibles.\n")
+          '
 
 
       # ========================================================================
@@ -114,36 +129,35 @@ jobs:
 
 
       # ========================================================================
-      # 7. Génération du rapport HTML
+      # 7. Génération du rapport
       # ========================================================================
 
       - name: Build HTML report
         run: |
-          Rscript -e 'rmarkdown::render(
+          Rscript -e '
+          rmarkdown::render(
             input = "reports/rapport_final_prediction_ventes_pharma.Rmd",
             output_file = "index.html",
             output_dir = "docs",
             envir = new.env()
-          )'
+          )
+          '
 
 
       # ========================================================================
-      # 8. Vérification du rapport généré
+      # 8. Vérification du HTML
       # ========================================================================
 
       - name: Check generated report
         run: |
-          if [ ! -f "docs/index.html" ]; then
-            echo "ERREUR : docs/index.html n'a pas été généré."
-            exit 1
-          fi
+          test -f docs/index.html
 
-          echo "Rapport HTML généré avec succès."
+          echo "Rapport généré :"
           ls -lh docs/index.html
 
 
       # ========================================================================
-      # 9. Publication du nouveau rapport dans le dépôt
+      # 9. Publication automatique dans GitHub
       # ========================================================================
 
       - name: Commit generated report
